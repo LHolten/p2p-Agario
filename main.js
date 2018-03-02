@@ -69,11 +69,8 @@ Physics.util.ticker.on(function( time, dt ){
 
 // start the ticker
 Physics.util.ticker.start();
-
 //local world set up
 
-
-var player_list = []
 
 
 var peerId = sha1.sync(randomBytes(20))
@@ -84,7 +81,7 @@ var opts = {
     infoHash: infoHash,
     announce: [
         'wss://tracker.openwebtorrent.com:443/announce',
-        'wss://tracker.fastcast.nz:443/announce'
+        //'wss://tracker.fastcast.nz:443/announce'
     ],
 }
 var client = new Client(opts)
@@ -105,9 +102,40 @@ client.on('warning', function (err) {
     console.log(err.message)
 })
 
-client.once('peer', function (peer) {
-    player_list.push(peer)
+client.on('peer', function (peer) {
+    peer.on('connect', function () {
+        peer.adress = peer.remoteAddress + ':' + peer.remotePort
+        add_player(peer)
+        console.log('connected', peer.adress)
+    })
+    peer.on('data', function (data) {
+        process_data(peer, data)
+        console.log('received data', peer.adress)
+    })
+    peer.on('close', function () {
+        remove_player(peer)
+        console.log('closed', peer.adress)
+    })
+    peer.on('error', function (err) {
+        console.log(err.message)
+    })
 })
 
-client.setInterval(5000)
+var update_opts = {
+    numwant: 8
+}
+
+
+var player_list = {}
+
+function remove_player(peer) {
+    delete player_list[peer.adress]
+}
+function add_player(peer) {
+    player_list[peer.adress] = peer
+}
+function process_data(peer, data) {
+    if (!typeof data === String) return;
+}
+
 client.start()
