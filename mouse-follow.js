@@ -120,7 +120,7 @@ Physics.behavior('mouse-follow', function( parent ){
 
             var state,
                 speed = this.options.maxVel,
-                bodies = data.bodies;//this.getTargets()
+                bodies = this.getTargets();
 
             for ( var i = 0, l = bodies.length; i < l; ++i ){
                 state = bodies[ i ].state;
