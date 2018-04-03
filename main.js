@@ -35,12 +35,12 @@ world.on('step', function(){
 });
 
 // bounds of the window
-var viewportBounds = Physics.aabb(0, 0, window.innerWidth, window.innerHeight);
+var worldBounds = Physics.aabb(0, 0, 1000, 1000);
 
 // constrain objects to these bounds
 world.add(Physics.behavior('edge-collision-detection', {
-    aabb: viewportBounds,
-    restitution: 0.99,
+    aabb: worldBounds,
+    restitution: 0,
     cof: 0.99
 }));
 
@@ -58,8 +58,24 @@ world.add(
 // ensure objects bounce when edge collision is detected
 world.add( Physics.behavior('body-impulse-response') );
 
-// add some gravity
-world.add( Physics.behavior('constant-acceleration') );
+
+world.on('collisions:detected', function( data ){
+    var c;
+    for (var i = 0, l = data.collisions.length; i < l; i++){
+        c = data.collisions[ i ];
+        
+        if (c.bodyA.owner === c.bodyB.owner) {
+            world.publish({
+                topic: 'collision-pair',
+                bodyA: c.bodyA,
+                bodyB: c.bodyB
+            });
+        }
+    }
+});
+
+
+
 
 // subscribe to ticker to advance the simulation
 Physics.util.ticker.on(function( time, dt ){
