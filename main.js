@@ -2,8 +2,11 @@ var Client = require('bittorrent-tracker/client')
 var randomBytes = require('randombytes')
 var sha1 = require('simple-sha1')
 
+var Direction = Object.freeze({left:0, right:1, up:2, down:3})
 
-var player_list = {}
+var spatialMesh = new CircularArray()
+var secondSpatialMesh = {}
+var connections = {}
 
 
 var peerId = sha1.sync(randomBytes(20))
@@ -37,33 +40,57 @@ client.on( 'warning', function( err ){
 
 function handle_data( data, peer ){
     if( data instanceof Uint8Array ){
-        console.log('recieved data', data, peer)
+        console.log( 'recieved data', data, peer )
 
-        if( data[0] === NEW ){
-            console.log('new cell')
+        switch (data[0]) {
+            case NEW:
+                console.log( 'new cell' )
+                add_cell( data[2], data[3], peer.id )
+                break;
+            case POS:
+                console.log( 'position received' )
+                
+                //check if position belongs in mesh
 
-            add_cell( data[2], data[3], peer.id )
+            default:
+                break;
         }
     }
 }
 
 client.on( 'peer', function( peer ){
     peer.on( 'connect', function(){
-        if( player_list[ peer.id ] ){
-            peer.destroy('already connected')
+        if( connections[ peer.id ] ){
+            peer.destroy( 'already connected' )
         }else{
-            console.log( 'new player, send cell!' )
-            player_list[ peer.id ] = peer
-            peer.send( player_cells() )
+            console.log( 'new player, send my position!' )
+            
+            //first step in handshake is sending my position to make sure a connection is wanted
+            peer.send( my_pos() )
+            //add to connection list, but not to mesh
+            connections[ peer.id ] = peer
         }
     })
 
-    peer.on( 'data', function(data){
+    peer.on( 'data', function( data ){
         handle_data( data, peer )
     })
 
     peer.on( 'close', function(){
-        delete player_list[ peer.id ]
+        //remove peer from connection list
+        delete connections[ peer.id ]
+        
+        //search in second mesh for new neighbours
+        var meshIndex = spatialMesh.indexOf( peer.id )
+        var leftPos = connections[ spatialMesh[ meshIndex - 1 ] ].pos
+        var rightPos = connections[ spatialMesh[ meshIndex + 1 ] ].pos
+        var myPos = self.pos
+
+        for( i in secondSpatialMesh[ peer.id ] ){
+            var targetPos = connections[ i ].pos
+
+            should_flip( leftPos, myPos, rightPos, targetPos )
+        }
         
         console.log( 'player left, removing cell' )
         remove_owner_cells( peer.id )
@@ -82,8 +109,8 @@ function broadcast_new_cell( body ){
     var data = Uint8Array.from([ NEW, currentStep, body.state.pos.x, body.state.pos.y, body.mass ])
     console.log('send', data)
 
-    for( id in player_list ){
-        player_list[ id ].send( data )
+    for( id in connections ){
+        connections[ id ].send( data )
     }
 }
 
