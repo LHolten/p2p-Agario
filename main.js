@@ -2,15 +2,20 @@ var Client = require('bittorrent-tracker/client')
 var randomBytes = require('randombytes')
 var sha1 = require('simple-sha1')
 
-var Direction = Object.freeze({left:0, right:1, up:2, down:3})
+// var Direction = Object.freeze({left:0, right:1, up:2, down:3})
 
-var spatialMesh = new CircularArray()
-var secondSpatialMesh = {}
-var connections = {}
-
+// var spatialMesh = new CircularArray()
+// var secondSpatialMesh = {}
+var UpdateMessage
+var IntroductionMessage
 
 var peerId = sha1.sync(randomBytes(20))
 var infoHash = sha1.sync('Unnamedcell FFA 1')
+
+var connections = {}
+connections[ peerId ] = {}
+connections[ peerId ].cells = {}
+connections[ peerId ].target = {x: 100, y: 100}
 
 var opts = {
     peerId: peerId,
@@ -40,36 +45,63 @@ client.on( 'warning', function( err ){
 
 function handle_data( data, peer ){
     if( data instanceof Uint8Array ){
-        console.log( 'recieved data', data, peer )
+        // console.log( 'recieved data', data, peer.id )
+        var message
 
-        switch (data[0]) {
-            case NEW:
-                console.log( 'new cell' )
-                add_cell( data[2], data[3], peer.id )
-                break;
-            case POS:
-                console.log( 'position received' )
-                
-                //check if position belongs in mesh
+        try {
+            message = UpdateMessage.decode( data )
+        } catch (e) {
+            console.log( 'invalid message received', e )
+            return
+        }
 
-            default:
-                break;
+        // console.log( 'message:' , message, peer.id )
+
+        if( message.cells ){
+            for( id in message.cells ){
+                var cell = message.cells[ id ]
+                if( typeof cell.owner === 'string' && typeof cell.id === 'number' && typeof cell.radius === 'number' ){
+                    var body
+                    if( connections[ cell.owner ].cells[ cell.id ] ){
+                        body = connections[ cell.owner ].cells[ cell.id ]
+                    }else{
+                        body = add_cell( connections[ cell.owner ].target, cell.owner, id )
+                    }
+                    body.connections[ peer.id ] = cell.radius
+                }
+            }
+        }
+
+        if( message.action ){
+            if( typeof message.action.targetSplits === 'number' ){
+                if( connections[ peer.id ].targetSplits < message.action.targetSplits ){
+                    split( peer.id, message.action.targetSplits - connections[ peer.id ].targetSplits )
+                    connections[ peer.id ].targetSplits = message.action.targetSplits
+                }
+            }
+            if( typeof message.action.targetX === 'number' && typeof message.action.targetY === 'number' ){
+                var target = {x: message.action.targetX, y: message.action.targetY }
+                connections[ peer.id ].target = target
+            }
         }
     }
 }
 
 client.on( 'peer', function( peer ){
+    
+    if( connections[ peer.id ] ){
+        console.log( 'already connected, destroying extra connection' )
+        peer.destroy( 'already connected message' )
+    }else{
+        connections[ peer.id ] = peer
+        connections[ peer.id ].cells = {}
+        connections[ peer.id ].target = {x: 0, y:0}
+        
+        console.log( 'new peer', peer.id, 'sending all cells' )
+    }
+
     peer.on( 'connect', function(){
-        if( connections[ peer.id ] ){
-            peer.destroy( 'already connected' )
-        }else{
-            console.log( 'new player, send my position!' )
-            
-            //first step in handshake is sending my position to make sure a connection is wanted
-            peer.send( my_pos() )
-            //add to connection list, but not to mesh
-            connections[ peer.id ] = peer
-        }
+        send_all_cells( peer )
     })
 
     peer.on( 'data', function( data ){
@@ -77,23 +109,12 @@ client.on( 'peer', function( peer ){
     })
 
     peer.on( 'close', function(){
-        //remove peer from connection list
-        delete connections[ peer.id ]
-        
-        //search in second mesh for new neighbours
-        var meshIndex = spatialMesh.indexOf( peer.id )
-        var leftPos = connections[ spatialMesh[ meshIndex - 1 ] ].pos
-        var rightPos = connections[ spatialMesh[ meshIndex + 1 ] ].pos
-        var myPos = self.pos
-
-        for( i in secondSpatialMesh[ peer.id ] ){
-            var targetPos = connections[ i ].pos
-
-            should_flip( leftPos, myPos, rightPos, targetPos )
+        if( connections[ peer.id ] && connections[ peer.id ] == peer ){  
+            console.log( 'player left, removing cell' )
+            remove_owner_cells( peer.id )
+            // remove peer from connection list
+            delete connections[ peer.id ]
         }
-        
-        console.log( 'player left, removing cell' )
-        remove_owner_cells( peer.id )
     })
 
     peer.on( 'error', function( err ){
@@ -101,18 +122,77 @@ client.on( 'peer', function( peer ){
     })
 })
 
-client.setInterval( 5000 )
-client.start()
-
-
-function broadcast_new_cell( body ){
-    var data = Uint8Array.from([ NEW, currentStep, body.state.pos.x, body.state.pos.y, body.mass ])
-    console.log('send', data)
-
-    for( id in connections ){
-        connections[ id ].send( data )
+function broadcast_mass( cell ){
+    var payload = { cells: [{ owner: cell.owner, id: cell.id, radius: cell.radius }] }
+    console.log('send', payload)
+    
+    var errMsg = UpdateMessage.verify(payload)
+    if( errMsg ){
+        throw Error( errMsg )
     }
+
+    var buffer = UpdateMessage.encode( payload ).finish()
+
+    broadcast( buffer )
 }
 
-//give us a new cell and broadcast it!
-broadcast_new_cell( add_cell( 100, 100, 'player' ) )
+function broadcast_action( pos ){
+    var payload = { action: { targetX: pos.x, targetY: pos.y } }
+    // console.log('send', payload)
+    
+    var errMsg = UpdateMessage.verify(payload)
+    if( errMsg ){
+        throw Error( errMsg )
+    }
+
+    var buffer = UpdateMessage.encode( payload ).finish()
+
+    broadcast( buffer )
+}
+
+function send_all_cells( peer ){
+    var cells = []
+
+    // console.log( 'all cells', allCells )
+    for( id in allCells ){
+        cells.push({ owner: allCells[ id ].owner, id: Number(allCells[ id ].id), radius: allCells[ id ].radius })
+    }
+    var payload = { cells: cells }
+
+    var errMsg = UpdateMessage.verify(payload)
+    if( errMsg ){
+        throw Error( errMsg )
+    }
+
+    var buffer = UpdateMessage.encode( payload ).finish()
+
+    peer.send( buffer )
+    // console.log( 'send', payload, 'buffer form', buffer )
+}
+
+function broadcast( buffer ){
+    for( id in connections ){
+        if( id !== peerId ){
+            connections[ id ].send( buffer )
+        }
+    } 
+}
+
+protobuf.load( "connection.proto", function( err, root ) {
+    if (err){
+        throw err;
+    }
+
+    UpdateMessage = root.lookupType("UpdateMessage");
+    IntroductionMessage = root.lookupType("IntroductionMessage");
+    
+    // client.setInterval( 5000 )
+    client.start()
+
+    // start the ticker
+    Physics.util.ticker.start();
+
+    //give us a new cell and broadcast it!
+    broadcast_mass( add_cell( {x: 100, y: 100}, peerId, 1 ) )
+});
+

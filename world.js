@@ -1,6 +1,6 @@
-var playerBodies = []
 var currentStep = 0
 var world = Physics()
+var allCells = []
 
 const NEW = 0
 
@@ -56,11 +56,9 @@ world.add( Physics.behavior( 'body-impulse-response' ) );
 // add mouse-follow
 var mouseFollow = Physics.behavior( 'mouse-follow', {
     maxVel: 0.5,
-    el: window,
 })
-mouseFollow.applyTo( playerBodies )
+mouseFollow.applyTo( [] )
 world.add( mouseFollow );
-
 
 // subscribe to ticker to advance the simulation
 Physics.util.ticker.on(function( time, dt ){
@@ -68,44 +66,44 @@ Physics.util.ticker.on(function( time, dt ){
     world.step( time );
 });
 
-// start the ticker
-Physics.util.ticker.start();
 
-
-function add_cell( x, y, owner ){
+function add_cell( pos, owner, id ){
     //console.log( 'new cell with owner', owner )
     var circle = Physics.body( 'circle', {
-        x: x, // x-coordinate
-        y: y, // y-coordinate
+        x: pos.x, // x-coordinate
+        y: pos.y, // y-coordinate
         vx: 0.0, // velocity in x-direction
         vy: 0.0, // velocity in y-direction
         radius: 20,
-        owner: owner
+        owner: owner,
+        id: id,
+        connections: {},
     });
+    // connections[ owner ].cellCount += 1
+    connections[ owner ].cells[ id ] = circle
+
     world.add( circle );
 
-    if( circle.owner === 'player' ){
-        playerBodies.push( circle )
-        mouseFollow.applyTo(playerBodies)
-    }
+    allCells.push( circle )
+    mouseFollow.applyTo( allCells )
+
     return circle
 }
 
-function player_cells(){
-    /*var message = [][]
-    for (body in playerBodies) {
-        message.push([body.state.pos.toString, body.mass]) //body.geometry.radius
-    }*/
-    var body = playerBodies[0]
-    return Uint8Array.from([ NEW, currentStep, body.state.pos.x, body.state.pos.y, body.mass ])
-}
+// function player_cells(){
+//     /*var message = [][]
+//     for (body in playerBodies) {
+//         message.push([body.state.pos.toString, body.mass]) //body.geometry.radius
+//     }*/
+//     var body = playerBodies[0]
+//     return Uint8Array.from([ NEW, currentStep, body.state.pos.x, body.state.pos.y, body.mass ])
+// }
 
 function remove_owner_cells( owner ){
-    var bodies = world.getBodies()
-    for( i in bodies ){
-        if( bodies[ i ].owner === owner ){
-            world.removeBody( bodies[ i ] )
-            console.log( 'removed cell' )
-        }
+    for( id in connections[ owner ].cells ){
+        world.removeBody( connections[ owner ].cells[ id ] )
+        allCells.splice( allCells.indexOf( connections[ owner ].cells[ id ] ), 1 )
+        console.log( 'removed cell' )
     }
+    mouseFollow.applyTo( allCells )        
 }

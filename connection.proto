@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+message UpdateMessage {
+    message Action {
+        float target_x = 1;
+        float target_y = 2;
+        uint32 target_splits = 3;
+    }
+    Action action = 1;
+    message CellSize {
+        string owner = 1;
+        uint32 id = 2;
+        uint32 radius = 3;
+    }
+    repeated CellSize cells = 2;
+}
+
+message IntroductionMessage {
+    string player_name = 1;
+}
