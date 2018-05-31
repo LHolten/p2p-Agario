@@ -1,31 +1,45 @@
 var currentStep = 0
-var world = Physics()
+var world = new Physics.world({ sleepDisabled: true })
 var allCells = []
-
-const NEW = 0
 
 var colors = {
     white: '0xFFFFFF',
     violet: '0x542437',
-    blue: '0x53777A'
+    blue: '0x53777A',
+    gray: '0x808080'
+}
+
+var normalStyle = {
+    'circle' : {
+        strokeStyle: colors.blue,
+        lineWidth: 1,
+        fillStyle: colors.blue,
+        angleIndicator: colors.white,
+        fillAlpha: 1,
+        strokeAlpha: 1,
+        alpha: 1
+    }
+}
+
+var disconnectedStyle = {
+    'circle' : {
+        strokeStyle: colors.gray,
+        lineWidth: 1,
+        fillStyle: colors.gray,
+        angleIndicator: colors.white,
+        fillAlpha: 1,
+        strokeAlpha: 1,
+        alpha: 1
+    },
 }
 
 var renderer = Physics.renderer('pixi', {
     meta: true,
     width: window.innerWidth,
     height: window.innerHeight,
-    styles: {
-        'circle' : {
-            strokeStyle: colors.blue,
-            lineWidth: 1,
-            fillStyle: colors.blue,
-            angleIndicator: colors.white,
-            fillAlpha: 1,
-            strokeAlpha: 1,
-            alpha: 1
-        },
-    },
+    styles: normalStyle,
 });
+
 
 // add the renderer
 world.add( renderer );
@@ -79,7 +93,11 @@ function add_cell( pos, owner, id ){
         id: id,
         connections: {},
     });
-    // connections[ owner ].cellCount += 1
+    
+    
+    if( !connections[ owner ].cells ){
+        connections[ owner ].cells = {}
+    }
     connections[ owner ].cells[ id ] = circle
 
     world.add( circle );
@@ -106,4 +124,20 @@ function remove_owner_cells( owner ){
         console.log( 'removed cell' )
     }
     mouseFollow.applyTo( allCells )        
+}
+
+function set_owner_disconnected( owner ){
+    for( id in connections[ owner ].cells ){
+        renderer.detach( connections[ owner ].cells[ id ].view )
+        connections[ owner ].cells[ id ].view = renderer.createView( connections[ owner ].cells[ id ].geometry, disconnectedStyle )
+        console.log( 'changed style' )
+    }
+}
+
+function set_owner_connected( owner ){
+    for( id in connections[ owner ].cells ){
+        renderer.detach( connections[ owner ].cells[ id ].view )
+        connections[ owner ].cells[ id ].view = renderer.createView( connections[ owner ].cells[ id ].geometry, normalStyle )
+        console.log( 'changed style' )
+    }
 }
