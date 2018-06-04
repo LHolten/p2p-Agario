@@ -3,11 +3,11 @@ var element = window
 // time between move events
 var moveThrottle = 1000 / 10 | 0
 
-if ( !element ){
+if (!element) {
     throw "No DOM element specified";
 }
 
-getElementOffset = function( el ){
+getElementOffset = function(el) {
     var curleft = 0
         ,curtop = 0
         ;
@@ -22,7 +22,7 @@ getElementOffset = function( el ){
     return { left: curleft, top: curtop };
 };
 
-move = Physics.util.throttle(function move( e ){
+move = Physics.util.throttle(function move(e) {
     var pos
         ,touch
         ,offset
@@ -31,30 +31,28 @@ move = Physics.util.throttle(function move( e ){
         ;
 
     // Adjust for PointerEvent and older browsers
-    if ( !e.changedTouches ) {
-        e.changedTouches = [ e ];
+    if (!e.changedTouches) {
+        e.changedTouches = [e];
     }
 
-    offset = getElementOffset( element );
+    offset = getElementOffset(element);
 
-    for ( touchIndex = 0, l = e.changedTouches.length; touchIndex < l; touchIndex++) {
+    for (touchIndex = 0, l = e.changedTouches.length; touchIndex < l; touchIndex++) {
         touch = e.changedTouches[touchIndex];
         pos = {x: touch.pageX - offset.left, y: touch.pageY - offset.top };
-        connections[ peerId ].target = pos;
-        broadcast_action( pos )
+        connections[peerId].target = pos;
+        broadcast_action()
     }
 }, moveThrottle);
 
-if ( window.PointerEvent ) {
-    element.addEventListener('pointermove', move);
-} else {
-    element.addEventListener('mousemove', move);
-    element.addEventListener('touchmove', move);
+function split() {
+    connections[peerId].targetSplits += 1
+    broadcast_action()
+    split_player(peerId)
 }
 
-// if ( window.PointerEvent ) {
-//     element.removeEventListener('pointermove', this.move);
-// } else {
-//     element.removeEventListener('mousemove', this.move);
-//     element.removeEventListener('touchmove', this.move);
-// }
+function on_key_up(event) {
+    if(event.key === ' ') {
+        split()
+    }
+}
